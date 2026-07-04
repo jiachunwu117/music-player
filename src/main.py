@@ -282,7 +282,13 @@ class MusicPlayer:
             self.is_paused = True
             self.play_btn.config(text="▶播放", bg="#4CAF50")
             self.status_label.config(text="⏸ 已暂停")
-            self.current_position = self.get_current_position()
+            self.status_label.config(text="⏸ 已暂停")
+
+            # 🔥 修复：暂停时保存当前位置
+            # 但是要从 pygame 获取更准确的位置
+            # 由于 pygame 无法直接获取，我们用计算的方式
+            elapsed = time.time() - self.play_start_time
+            self.current_position = self.current_position + elapsed
 
     def replay(self):
         """重播：从头播放当前歌曲"""
