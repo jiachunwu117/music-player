@@ -2,6 +2,7 @@
 简单音乐播放器
 课程设计 - 程序语言课程设计
 功能：播放/暂停/上一曲/下一曲/重播/音量控制/进度条/循环模式
+快捷键：空格=播放/暂停，←=上一曲，→=下一曲，↑=音量+，↓=音量-
 """
 
 import tkinter as tk
@@ -10,6 +11,7 @@ import pygame
 import os
 import random
 import time
+import json
 from mutagen.mp3 import MP3
 from mutagen.flac import FLAC
 from mutagen.oggvorbis import OggVorbis
@@ -18,6 +20,9 @@ from mutagen.wave import WAVE
 
 class MusicPlayer:
     """音乐播放器主类"""
+
+    # 播放列表保存文件
+    PLAYLIST_FILE = "playlist.json"
 
     def __init__(self, root):
         """初始化播放器"""
@@ -47,8 +52,87 @@ class MusicPlayer:
         self.volume_slider.set(70)
         pygame.mixer.music.set_volume(0.7)
 
+        # 加载上次保存的播放列表
+        self.load_playlist()
+
+        # 绑定键盘快捷键
+        self.bind_keyboard_shortcuts()
+
         # 窗口关闭时清理资源
         self.root.protocol("WM_DELETE_WINDOW", self.cleanup)
+
+    # ==================== 键盘快捷键绑定 ====================
+
+    def bind_keyboard_shortcuts(self):
+        """绑定键盘快捷键"""
+        self.root.focus_set()
+
+        # 空格键 - 播放/暂停
+        self.root.bind("<space>", lambda e: self.play_pause())
+
+        # 左箭头 - 上一曲
+        self.root.bind("<Left>", lambda e: self.prev_song())
+
+        # 右箭头 - 下一曲
+        self.root.bind("<Right>", lambda e: self.next_song())
+
+        # 上箭头 - 增加音量
+        self.root.bind("<Up>", lambda e: self.volume_up())
+
+        # 下箭头 - 减小音量
+        self.root.bind("<Down>", lambda e: self.volume_down())
+
+    def volume_up(self):
+        """增加音量"""
+        current = int(self.volume_slider.get())
+        new_vol = min(100, current + 10)
+        self.volume_slider.set(new_vol)
+        self.set_volume()
+
+    def volume_down(self):
+        """减小音量"""
+        current = int(self.volume_slider.get())
+        new_vol = max(0, current - 10)
+        self.volume_slider.set(new_vol)
+        self.set_volume()
+
+    # ==================== 播放列表持久化 ====================
+
+    def save_playlist(self):
+        """保存播放列表到本地文件"""
+        try:
+            with open(self.PLAYLIST_FILE, "w", encoding="utf-8") as f:
+                json.dump(self.song_list, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存播放列表失败: {e}")
+
+    def load_playlist(self):
+        """从本地文件加载播放列表"""
+        if not os.path.exists(self.PLAYLIST_FILE):
+            return
+
+        try:
+            with open(self.PLAYLIST_FILE, "r", encoding="utf-8") as f:
+                loaded_list = json.load(f)
+
+            # 只保留仍然存在的文件
+            self.song_list = []
+            for file_path in loaded_list:
+                if os.path.exists(file_path):
+                    self.song_list.append(file_path)
+                    self.listbox.insert(tk.END, os.path.basename(file_path))
+                # 不存在的文件自动忽略
+
+            if self.song_list:
+                self.status_label.config(text=f"📂 已加载 {len(self.song_list)} 首歌曲")
+                # 自动播放第一首
+                self.play_song(0)
+            else:
+                self.status_label.config(text="💡 双击列表播放歌曲")
+
+        except Exception as e:
+            print(f"加载播放列表失败: {e}")
+            self.status_label.config(text="💡 双击列表播放歌曲")
 
     # ==================== 界面创建 ====================
 
@@ -58,6 +142,11 @@ class MusicPlayer:
         title = tk.Label(self.root, text="🎵 音乐播放器",
                          font=("微软雅黑", 16, "bold"), fg="#2196F3")
         title.pack(pady=10)
+
+        # ---------- 快捷键提示 ----------
+        shortcut_label = tk.Label(self.root, text="⌨️ 空格:暂停/播放 | ←:上一曲 | →:下一曲 | ↑:音量+ | ↓:音量-",
+                                  font=("微软雅黑", 8), fg="#888")
+        shortcut_label.pack()
 
         # ---------- 播放列表 ----------
         list_frame = tk.Frame(self.root)
@@ -194,6 +283,9 @@ class MusicPlayer:
                     self.song_list.append(file)
                     self.listbox.insert(tk.END, os.path.basename(file))
 
+            # 保存列表到文件
+            self.save_playlist()
+
             self.status_label.config(text=f"✅ 已添加 {len(files)} 首歌曲")
 
             # 如果当前没有播放，自动播放第一首
@@ -282,11 +374,8 @@ class MusicPlayer:
             self.is_paused = True
             self.play_btn.config(text="▶播放", bg="#4CAF50")
             self.status_label.config(text="⏸ 已暂停")
-            self.status_label.config(text="⏸ 已暂停")
 
-            # 🔥 修复：暂停时保存当前位置
-            # 但是要从 pygame 获取更准确的位置
-            # 由于 pygame 无法直接获取，我们用计算的方式
+            # 保存当前位置
             elapsed = time.time() - self.play_start_time
             self.current_position = self.current_position + elapsed
 
@@ -315,7 +404,7 @@ class MusicPlayer:
         if self.current_index > 0:
             self.play_song(self.current_index - 1)
         else:
-            self.play_song(len(self.song_list) - 1)  # 循环到最后一首
+            self.play_song(len(self.song_list) - 1)
 
     def next_song(self):
         """下一曲"""
@@ -329,7 +418,7 @@ class MusicPlayer:
         if self.current_index < len(self.song_list) - 1:
             self.play_song(self.current_index + 1)
         else:
-            self.play_song(0)  # 循环到第一首
+            self.play_song(0)
 
     def play_random(self):
         """随机播放一首"""
@@ -337,7 +426,6 @@ class MusicPlayer:
             return
 
         rand_idx = random.randint(0, len(self.song_list) - 1)
-        # 避免连续播放同一首
         while rand_idx == self.current_index and len(self.song_list) > 1:
             rand_idx = random.randint(0, len(self.song_list) - 1)
         self.play_song(rand_idx)
@@ -381,7 +469,6 @@ class MusicPlayer:
     def update_progress(self):
         """定时更新进度（每500ms）"""
         if self.is_playing and not self.is_paused:
-            # 检查播放是否结束
             if not pygame.mixer.music.get_busy():
                 self.on_song_end()
                 return
@@ -399,12 +486,11 @@ class MusicPlayer:
         self.time_label.config(text="00:00")
         self.current_position = 0
 
-        # 根据模式决定下一首
-        if self.play_mode == 0:      # 列表循环
+        if self.play_mode == 0:
             self.next_song()
-        elif self.play_mode == 1:    # 单曲循环
+        elif self.play_mode == 1:
             self.play_song(self.current_index)
-        elif self.play_mode == 2:    # 随机播放
+        elif self.play_mode == 2:
             self.play_random()
 
     def seek_position(self, event):
@@ -412,11 +498,9 @@ class MusicPlayer:
         if not self.is_playing or self.song_duration <= 0:
             return
 
-        # 计算目标位置
         percent = self.progress.get() / 100
         target = min(percent * self.song_duration, self.song_duration)
 
-        # 记住当前是否在播放
         was_playing = not self.is_paused
 
         try:
@@ -427,7 +511,6 @@ class MusicPlayer:
             self.current_position = target
             self.play_start_time = time.time()
 
-            # 恢复暂停状态
             if not was_playing:
                 pygame.mixer.music.pause()
                 self.is_paused = True
@@ -482,8 +565,15 @@ class MusicPlayer:
             if self.timer_id:
                 self.root.after_cancel(self.timer_id)
 
+            # 删除保存文件
+            if os.path.exists(self.PLAYLIST_FILE):
+                os.remove(self.PLAYLIST_FILE)
+
     def cleanup(self):
         """关闭窗口时清理资源"""
+        # 关闭前保存播放列表
+        self.save_playlist()
+
         if self.timer_id:
             self.root.after_cancel(self.timer_id)
         pygame.mixer.music.stop()
