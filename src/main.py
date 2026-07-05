@@ -582,11 +582,7 @@ class MusicPlayer:
 
 
 # ==================== 程序入口 ====================
-def main():
-    """程序入口函数"""
+if __name__ == "__main__":
     root = tk.Tk()
     app = MusicPlayer(root)
     root.mainloop()
-
-if __name__ == "__main__":
-    main()
